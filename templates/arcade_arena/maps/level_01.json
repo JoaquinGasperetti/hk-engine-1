@@ -1,9 +1,9 @@
 {
   "name": "Arena 01",
   "spawn": {
-    "x": 6,
-    "y": 6,
-    "ang": 0
+    "x": 6.0,
+    "y": 6.0,
+    "ang": 0.0
   },
   "atmosphere": {
     "clearR": 10,

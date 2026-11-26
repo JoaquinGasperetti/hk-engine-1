@@ -224,7 +224,7 @@ async function loadMap(name) {
 async function loadScript(name) {
   state.activeScriptName = name;
   const data = await api(`/api/script?path=${encodeURIComponent(state.activeProjPath)}&name=${encodeURIComponent(name)}`);
-  document.getElementById("active-script-name").textContent = `scripts/${name}`;
+  document.getElementById("active-script-name").textContent = `${data.folder || "scripts"}/${name}`;
   document.getElementById("script-editor").value = data.code;
   renderLists();
 }
@@ -358,7 +358,8 @@ async function boot() {
   state.projects.forEach(p => {
     const opt = document.createElement("option");
     opt.value = p.path;
-    opt.textContent = `[${p.kind === "project" ? "PROYECTO" : "PLANTILLA"}] ${p.name}`;
+    const tag = p.kind === "external" ? (p.mode === "modular" ? "PS2 MODULAR" : "EXTERNO") : (p.kind === "project" ? "PROYECTO" : "PLANTILLA");
+    opt.textContent = `[${tag}] ${p.name}`;
     sel.appendChild(opt);
   });
   sel.onchange = () => loadProject(sel.value);
@@ -374,6 +375,18 @@ async function boot() {
   document.getElementById("btn-play").onclick = () => switchTab("play");
   document.getElementById("btn-reset-play").onclick = initPlayPreview;
   document.getElementById("btn-clear-log").onclick = () => { document.getElementById("console-out").textContent = ""; };
+
+  document.getElementById("btn-open-folder").onclick = async () => {
+    const folder = prompt("Ruta completa de la carpeta del proyecto (ej: C:\\proyectos\\mi_juego o /home/user/mi_juego):");
+    if (!folder) return;
+    try {
+      const r = await api("/api/open-folder", { method: "POST", body: JSON.stringify({ folder }) });
+      log(`Proyecto externo vinculado (${r.mode}): ${r.path}`);
+      await boot();
+      sel.value = r.path;
+      await loadProject(r.path);
+    } catch (e) { log("ERROR: " + e.message); }
+  };
 
   document.getElementById("btn-new-proj").onclick = async () => {
     const name = prompt("Nombre del nuevo juego:", "Mi Juego PS2");

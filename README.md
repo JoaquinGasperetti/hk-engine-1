@@ -98,6 +98,13 @@ HKEngine.registerHooks({
 - `HKPlatform.rect(x, y, w, h, rgba(r,g,b,a))` / `HKPlatform.text(x, y, str, scale, col)` — primitivas 2D portables (recordá que el alfa en PS2 GS va de `0` a `128`).
 - `HKPlatform.saveJSON(slot, obj)` / `HKPlatform.loadJSON(slot)` — persistencia unificada (`mc0:/HKENGINE/` en PS2, `localStorage` en PC).
 
+### 3.5 Abrir proyectos modulares PS2 existentes (modo dual)
+**HK Engine 1 Studio** también puede abrir cualquier proyecto modular externo de PlayStation 2 (`src/*.js` + `src/map.js` + `tools/build_main.py` / `tools/generate_map_walls.py`) sin mover archivos:
+- Hacé clic en **Abrir Carpeta** en la barra superior (o iniciá con `python3 hk_studio.py --open /ruta/a/tu/proyecto`).
+- El **Editor de Mapas 2D** detecta automáticamente las grillas (`const *_MAP = [...]`) de `src/map.js` y te permite editarlas y recorrerlas en la **Vista Previa 3D**.
+- El **Editor de Scripts** lista y guarda directamente todos los módulos de `src/*.js`.
+- El botón **Exportar PS2** ejecuta `tools/generate_map_walls.py` y `tools/build_main.py` del proyecto para regenerar tus `.obj` y el `main.js` listo para consola.
+
 ### 3.4 Probar en vivo
 Presioná **Probar en Vivo** (o la pestaña **Vista Previa 3D**) para recorrer tu mapa inmediatamente con **WASD**, **Flechas**, **C** (agacharse/sigilo) y **F** (luz).
 

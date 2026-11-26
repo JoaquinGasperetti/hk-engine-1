@@ -8,3 +8,4 @@ Thumbs.db
 *.exe
 build/
 *.spec
+.hk_workspaces.json
