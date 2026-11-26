@@ -282,11 +282,8 @@ class HKStudioHandler(http.server.SimpleHTTPRequestHandler):
                 pdir, mode = resolve_project_dir(payload["path"])
                 if mode == "modular":
                     if parsed.path == "/api/export-pc":
-                        return self._send_json({
-                            "ok": False,
-                            "stdout": "",
-                            "stderr": "Proyecto en modo modular PS2 (AthenaEnv directo). Usa 'Exportar PS2' para compilar main.js y mallas .obj, o migra a project.json para exportar PC (.exe).",
-                        })
+                        proc = subprocess.run([sys.executable, str(ROOT / "tools/build_pc.py"), str(pdir)], capture_output=True, text=True)
+                        return self._send_json({"ok": proc.returncode == 0, "stdout": proc.stdout, "stderr": proc.stderr})
                     logs = []
                     if (pdir / "tools/generate_map_walls.py").is_file():
                         r_mesh = subprocess.run([sys.executable, str(pdir / "tools/generate_map_walls.py")], cwd=pdir, capture_output=True, text=True)
