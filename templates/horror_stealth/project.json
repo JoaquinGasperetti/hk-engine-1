@@ -1,0 +1,9 @@
+{
+  "name": "Plantilla Terror y Sigilo",
+  "author": "HK Entertainment",
+  "genre": "Survival Horror",
+  "version": "1.0.0",
+  "startMap": "level_01",
+  "targetPS2": true,
+  "targetPC": true
+}

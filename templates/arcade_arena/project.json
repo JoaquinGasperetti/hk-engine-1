@@ -1,0 +1,9 @@
+{
+  "name": "Plantilla Arena Arcade 3D",
+  "author": "HK Entertainment",
+  "genre": "Arcade Contrarreloj",
+  "version": "1.0.0",
+  "startMap": "level_01",
+  "targetPS2": true,
+  "targetPC": true
+}

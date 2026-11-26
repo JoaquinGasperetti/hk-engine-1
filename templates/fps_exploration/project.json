@@ -1,0 +1,9 @@
+{
+  "name": "Demo Exploracion 3D",
+  "author": "HK Entertainment",
+  "genre": "FPS / Exploracion",
+  "version": "1.0.0",
+  "startMap": "level_01",
+  "targetPS2": true,
+  "targetPC": true
+}

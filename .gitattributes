@@ -1,0 +1,8 @@
+* text=auto eol=lf
+SYSTEM.CNF text eol=crlf
+athena.ini text eol=crlf
+*.elf binary
+*.ogg binary
+*.wav binary
+*.adp binary
+*.png binary

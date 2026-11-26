@@ -1,0 +1,10 @@
+dist/
+__pycache__/
+*.pyc
+*.iso
+ATHA_000.01
+.DS_Store
+Thumbs.db
+*.exe
+build/
+*.spec
