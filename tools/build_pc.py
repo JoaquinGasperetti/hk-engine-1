@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Exportador PC (App Desktop + generador de .exe vía PyInstaller) para HK Engine 1.
-Soporta tanto proyectos nativos (project.json) como proyectos modulares PS2 (AthenaEnv V4)."""
+"""Exportador PC (App Desktop WebGL 3D + generador de .exe vía python -m PyInstaller)
+para HK Engine 1. Soporta proyectos nativos (project.json) y modulares PS2 (AthenaEnv V4)."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def main():
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     try:
         import webview
-        webview.create_window({title!r}, url, width=1024, height=720)
+        webview.create_window({title!r}, url, width=1024, height=740)
         webview.start()
     except ImportError:
         webbrowser.open(url)
@@ -55,10 +55,22 @@ if __name__ == "__main__":
     add_flags = " ".join(f'--add-data "{item}"' for item in extra_add_data)
     bat_lines = [
         "@echo off",
-        f"echo Compilando {slug}.exe con PyInstaller...",
-        "pip install pyinstaller pywebview",
-        f'pyinstaller --onefile --noconsole --name {slug} {add_flags} launcher_pc.py',
-        f"echo Listo! Ejecutable generado en dist\\{slug}.exe",
+        "setlocal",
+        f"echo Instalando PyInstaller y PyWebView en el Python activo...",
+        "python -m pip install --quiet pyinstaller pywebview",
+        "if errorlevel 1 (",
+        "  echo [ERROR] No se pudo instalar PyInstaller. Verifica tu instalacion de Python.",
+        "  pause",
+        "  exit /b 1",
+        ")",
+        f"echo Compilando {slug}.exe (3D WebGL + assets incluidos)...",
+        f'python -m PyInstaller --onefile --noconsole --name {slug} {add_flags} launcher_pc.py',
+        "if errorlevel 1 (",
+        "  echo [ERROR] Fallo la compilacion de PyInstaller.",
+        "  pause",
+        "  exit /b 1",
+        ")",
+        f"echo [OK] Ejecutable generado en: %cd%\\dist\\{slug}.exe",
         "pause",
         "",
     ]
@@ -66,7 +78,7 @@ if __name__ == "__main__":
 
 
 def export_modular_ps2_to_pc(project_dir: Path, out_dir: Path) -> Path:
-    """Exporta un proyecto modular PS2 (AthenaEnv V4) a PC / .exe usando athena_pc_shim.js."""
+    """Exporta un proyecto modular PS2 (AthenaEnv V4) a PC 3D WebGL + .exe."""
     if (project_dir / "tools/build_main.py").is_file():
         subprocess.run([sys.executable, str(project_dir / "tools/build_main.py")], cwd=project_dir, check=True)
 
@@ -78,20 +90,24 @@ def export_modular_ps2_to_pc(project_dir: Path, out_dir: Path) -> Path:
         shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Copiar shim de AthenaEnv + main.js + assets (audio, texturas, fuentes)
     shutil.copy2(ENGINE_ROOT / "engine/core/athena_pc_shim.js", out_dir / "athena_pc_shim.js")
     shutil.copy2(main_src, out_dir / "main.js")
 
     manifest = []
+    obj_preload = {}
     assets_src = project_dir / "assets"
     if assets_src.is_dir():
         shutil.copytree(assets_src, out_dir / "assets")
         for f in sorted((out_dir / "assets").rglob("*")):
             if f.is_file():
-                manifest.append(f.relative_to(out_dir).as_posix())
+                rel = f.relative_to(out_dir).as_posix()
+                manifest.append(rel)
+                if f.suffix.lower() == ".obj":
+                    obj_preload[rel] = f.read_text(encoding="utf-8", errors="ignore")
 
     (out_dir / "asset_manifest.js").write_text(
-        f"window.HK_ASSET_MANIFEST = {json.dumps(manifest, ensure_ascii=False)};\n",
+        f"window.HK_ASSET_MANIFEST = {json.dumps(manifest, ensure_ascii=False)};\n"
+        f"window.HK_OBJ_FILES = {json.dumps(obj_preload, ensure_ascii=False)};\n",
         encoding="utf-8",
     )
 
@@ -101,16 +117,21 @@ def export_modular_ps2_to_pc(project_dir: Path, out_dir: Path) -> Path:
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>{title} — HK Engine 1 PC</title>
+<title>{title} — HK Engine 1 PC (3D WebGL)</title>
 <style>
   html, body {{ margin: 0; height: 100%; background: #040508; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; font-family: system-ui, sans-serif; color: #94a3b8; }}
-  canvas {{ width: min(100vw, calc((100vh - 28px) * 640 / 448)); height: auto; image-rendering: pixelated; box-shadow: 0 20px 60px rgba(0,0,0,0.8); border: 1px solid #1e293b; cursor: crosshair; }}
+  .stage {{ position: relative; width: min(100vw, calc((100vh - 30px) * 640 / 448)); aspect-ratio: 640 / 448; box-shadow: 0 20px 60px rgba(0,0,0,0.85); border: 1px solid #1e293b; }}
+  .stage canvas {{ position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; }}
+  #hk-canvas {{ cursor: crosshair; }}
   .bar {{ font-size: 11.5px; margin-top: 6px; opacity: 0.85; }}
 </style>
 </head>
 <body>
-<canvas id="hk-canvas" width="640" height="448"></canvas>
-<div class="bar">PC Controls: WASD mover · Mouse/Flechas mirar · E/Enter = X · Shift = O · C = Cuad · F = Linterna · G = L2 · Tab = PDA · Esc = Pausa</div>
+<div class="stage">
+  <canvas id="hk-gl-canvas" width="640" height="448"></canvas>
+  <canvas id="hk-canvas" width="640" height="448"></canvas>
+</div>
+<div class="bar">Clic en pantalla para capturar Mouse (camara 3D) · WASD mover · Shift correr · C sigilo · E/Clic izq interactuar · F/Clic der linterna · G senuelo · Tab mapa · Esc pausa</div>
 <script src="asset_manifest.js"></script>
 <script src="athena_pc_shim.js"></script>
 <script src="main.js"></script>
@@ -125,9 +146,9 @@ def export_modular_ps2_to_pc(project_dir: Path, out_dir: Path) -> Path:
         add_data.append("assets;assets")
     write_launcher_and_bat(out_dir, title, project_dir.name, add_data)
 
-    print(f"[PC EXPORT OK — MODO ATHENA SHIM] {out_dir} ({len(manifest)} assets incluidos)")
-    print("  - Probar ahora: python3 launcher_pc.py (en la carpeta exportada)")
-    print("  - Compilar .exe en Windows: ejecutar build_exe.bat")
+    print(f"[PC EXPORT OK — WEBGL 3D REAL] {out_dir} ({len(manifest)} assets, {len(obj_preload)} mallas .obj precargadas)")
+    print("  - Probar ahora: python launcher_pc.py")
+    print("  - Generar .exe en Windows: ejecutar build_exe.bat (usa python -m PyInstaller)")
     return out_dir
 
 
@@ -179,8 +200,8 @@ def export_pc(project_dir: Path, out_dir: Path) -> Path:
 
     write_launcher_and_bat(out_dir, title, project_dir.name, ["index.html;.", "game_bundle.js;."])
     print(f"[PC EXPORT OK] {out_dir}")
-    print("  - Probar ahora: python3 launcher_pc.py")
-    print("  - Compilar .exe en Windows: ejecutar build_exe.bat")
+    print("  - Probar ahora: python launcher_pc.py")
+    print("  - Generar .exe en Windows: ejecutar build_exe.bat")
     return out_dir
 
 
