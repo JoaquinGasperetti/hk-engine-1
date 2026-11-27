@@ -28,7 +28,7 @@
   </div>
 </header>
 
-<input id="model-files" type="file" accept=".obj,.mtl,.png,.jpg,.jpeg" multiple hidden>
+<input id="model-files" type="file" accept=".obj,.mtl,.png,.jpg,.jpeg,.webp" multiple hidden>
 
 <section id="platform-chooser" class="platform-chooser" role="dialog" aria-modal="true" aria-labelledby="platform-title">
   <div class="platform-card">
@@ -67,10 +67,6 @@
       <div class="dock-head"><span>SCRIPTS</span></div>
       <ul id="script-list" class="tree-list"></ul>
     </div>
-    <div class="dock-section model-browser">
-      <div class="dock-head"><span>MODELOS 3D · OBJ</span><span id="model-count" class="tree-tag">0</span></div>
-      <ul id="model-list" class="tree-list"></ul>
-    </div>
     <div class="dock-section grow">
       <div class="dock-head"><span>ENTIDADES EN ESCENA</span></div>
       <ul id="entity-list" class="tree-list"></ul>
@@ -81,6 +77,7 @@
   <section class="center-area">
     <nav class="tabs">
       <button class="tab active" data-tab="map">Editor de Mapa 2D</button>
+      <button class="tab" data-tab="viewport">Viewport 3D</button>
       <button class="tab" data-tab="script">Editor de Scripts</button>
       <button class="tab" data-tab="play">Vista Previa 3D</button>
       <span id="ps2-budget" class="budget-badge">PS2 Est.: -- tris</span>
@@ -106,16 +103,46 @@
       <textarea id="script-editor" spellcheck="false"></textarea>
     </div>
 
+    <div id="tab-viewport" class="tab-panel">
+      <div class="viewport-bar">
+        <span><b>Escena</b> · Arrastrar: orbitar · Botón derecho: desplazar · Rueda: zoom · Clic: seleccionar</span>
+        <div class="viewport-actions">
+          <span id="viewport-stats" class="tree-tag">WebGL · -- tris</span>
+          <button id="btn-frame-scene" class="mini-btn">Encuadrar escena</button>
+          <button id="btn-frame-selection" class="mini-btn">Encuadrar selección</button>
+        </div>
+      </div>
+      <div id="viewport-canvas-host" class="viewport-canvas-host">
+        <canvas id="play-gl-canvas" width="960" height="540" aria-label="Viewport 3D de la escena"></canvas>
+        <div class="viewport-crosshair" aria-hidden="true">+</div>
+      </div>
+    </div>
+
     <div id="tab-play" class="tab-panel">
       <div class="play-bar">
         <span>Controles: <b>WASD</b> caminar · <b>Flechas</b> girar · <b>E</b> interactuar · <b>C</b> sigilo · <b>F</b> luz</span>
         <button id="btn-reset-play" class="mini-btn">Reiniciar</button>
       </div>
-      <div class="canvas-stage">
-        <canvas id="play-gl-canvas" width="960" height="540"></canvas>
+      <div id="play-stage" class="canvas-stage">
         <canvas id="play-canvas" width="960" height="540"></canvas>
       </div>
     </div>
+
+    <section class="content-browser" aria-label="Navegador de contenido">
+      <div class="content-browser-bar">
+        <div class="content-browser-title"><strong>NAVEGADOR DE CONTENIDO</strong><span id="content-count" class="tree-tag">0 recursos</span></div>
+        <span id="content-breadcrumb" class="content-breadcrumb">/ assets</span>
+        <select id="content-filter" aria-label="Filtrar recursos">
+          <option value="all">Todos los tipos</option>
+          <option value="3d">Modelos 3D</option>
+          <option value="image">Texturas</option>
+          <option value="material">Materiales</option>
+          <option value="audio">Audio</option>
+        </select>
+        <input id="content-search" type="search" placeholder="Buscar recursos…" aria-label="Buscar recursos">
+      </div>
+      <div id="content-grid" class="content-grid"></div>
+    </section>
 
     <footer class="console-dock">
       <div class="dock-head">

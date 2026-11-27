@@ -2,7 +2,7 @@
 
 **HK Engine 1** es un motor de videojuegos 3D ligero y modular desarrollado por **HK Entertainment**, diseñado para crear múltiples géneros en primera persona (*FPS*, *Survival Horror*, *Dungeon Crawler*, exploración y arcade 3D) y exportar el mismo proyecto tanto a **PlayStation 2 real** ([AthenaEnv V4](https://github.com/DanielSant0s/AthenaEnv)) como a **PC (app de escritorio / `.exe`)**.
 
-Incluye **HK Engine 1 Studio**, un editor visual sin dependencias externas inspirado en Godot y Unity con Editor de Mapas 2D, Editor de Scripts, Inspector de Propiedades, Vista Previa 3D jugable en vivo y exportación en un clic.
+Incluye **HK Engine 1 Studio**, un editor visual sin dependencias externas inspirado en Godot, Unity y Unreal, con Editor de Mapas 2D, viewport 3D orbital, navegador de contenido, Editor de Scripts, Inspector de Propiedades, vista previa jugable y exportación en un clic.
 
 ---
 
@@ -29,7 +29,7 @@ El editor se abrirá automáticamente en `http://127.0.0.1:8765`.
 ```text
 hk-engine-1/
 ├── hk_studio.py                  # Servidor local y lanzador del IDE visual
-├── editor/                       # Interfaz gráfica (Editor de Mapas, Scripts, Inspector, Play 3D)
+├── editor/                       # Interfaz gráfica (mapas, viewport 3D, contenido, scripts e inspector)
 │   ├── index.html
 │   ├── studio.css
 │   └── studio.js
@@ -116,6 +116,12 @@ HKEngine.registerHooks({
 
 ### 3.4 Probar en vivo
 Presioná **Probar en Vivo** (o la pestaña **Vista Previa 3D**) para recorrer tu mapa inmediatamente con **WASD**, **Flechas**, **C** (agacharse/sigilo) y **F** (luz).
+
+### Viewport 3D y navegador de contenido
+- **Viewport 3D** muestra la geometría WebGL real del mapa, entidades y modelos OBJ; arrastrá para orbitar, usá el botón derecho para desplazar y la rueda para acercar o alejar.
+- Hacé clic sobre una entidad para seleccionarla en el **Inspector**. Los botones del viewport encuadran el mapa completo o la entidad seleccionada.
+- El **Navegador de Contenido** lista modelos, materiales y texturas del proyecto junto con las texturas del perfil. Podés buscar y filtrar recursos, seleccionar un OBJ para asignarlo a la entidad seleccionada o arrastrarlo al viewport.
+- El viewport y la vista previa jugable comparten el renderer WebGL, para que los modelos y materiales importados se vean igual en edición y durante la prueba.
 
 ---
 

@@ -189,6 +189,31 @@ class HKStudioHandler(http.server.SimpleHTTPRequestHandler):
                             obj_files[key] = asset.read_text(encoding="utf-8", errors="ignore")
                 return self._send_json({"objFiles": obj_files})
 
+            if parsed.path == "/api/content":
+                pdir, mode = resolve_project_dir(qs["path"][0])
+                if mode != "native":
+                    return self._send_json({"assets": []})
+                supported = {".obj", ".mtl", ".png", ".jpg", ".jpeg", ".webp", ".wav", ".ogg"}
+                assets = {}
+                roots = ((pdir / "assets", "project"), (ROOT / "engine/profiles/subsuelo04/assets", "profile"))
+                for root, source in roots:
+                    if not root.is_dir():
+                        continue
+                    for asset in root.rglob("*"):
+                        if not asset.is_file() or asset.suffix.lower() not in supported:
+                            continue
+                        path = "assets/" + asset.relative_to(root).as_posix()
+                        if path in assets and source == "profile":
+                            continue
+                        assets[path] = {
+                            "path": path,
+                            "name": asset.name,
+                            "type": asset.suffix.lower().lstrip("."),
+                            "bytes": asset.stat().st_size,
+                            "source": source,
+                        }
+                return self._send_json({"assets": sorted(assets.values(), key=lambda item: item["path"].lower())})
+
             if parsed.path == "/api/project-asset":
                 pdir, mode = resolve_project_dir(qs["path"][0])
                 if mode != "native":
@@ -324,8 +349,8 @@ class HKStudioHandler(http.server.SimpleHTTPRequestHandler):
                     return self._send_json({"error": "La importación directa de modelos requiere un proyecto nativo HK Engine."}, status=400)
                 filename = Path(payload.get("filename", "")).name
                 suffix = Path(filename).suffix.lower()
-                if suffix not in {".obj", ".mtl", ".png", ".jpg", ".jpeg"}:
-                    return self._send_json({"error": "Formato no compatible. Importá OBJ, MTL, PNG o JPG."}, status=400)
+                if suffix not in {".obj", ".mtl", ".png", ".jpg", ".jpeg", ".webp"}:
+                    return self._send_json({"error": "Formato no compatible. Importá OBJ, MTL, PNG, JPG o WebP."}, status=400)
                 try:
                     raw = base64.b64decode(payload.get("data", ""), validate=True)
                 except (binascii.Error, ValueError):

@@ -8,6 +8,8 @@ const state = {
   maps: [],
   scripts: [],
   modelAssets: [],
+  contentAssets: [],
+  selectedAssetPath: "",
   activeMapName: "",
   mapData: null,
   activeScriptName: "",
@@ -15,10 +17,16 @@ const state = {
   tool: { mode: "tile", val: 1 },
   painting: false,
   playActive: false,
+  activeTab: "map",
   playPlayer: null,
   playKeys: {},
   targetPlatform: "pc",
-  previewAssetPath: ""
+  previewAssetPath: "",
+  viewportCamera: null,
+  viewportDrag: null,
+  viewportObserver: null,
+  viewportLoopRunning: false,
+  viewportControlsBound: false
 };
 
 const PALETTE = [
@@ -169,6 +177,87 @@ function updateBudgetBadge() {
     : "PC · WebGL · Modelos 3D";
 }
 
+function contentGroup(asset) {
+  if (asset.type === "obj") return "3d";
+  if (["png", "jpg", "jpeg", "webp"].includes(asset.type)) return "image";
+  if (asset.type === "mtl") return "material";
+  if (["wav", "ogg"].includes(asset.type)) return "audio";
+  return "other";
+}
+
+function renderContentBrowser() {
+  const grid = document.getElementById("content-grid");
+  if (!grid) return;
+  const query = (document.getElementById("content-search").value || "").trim().toLowerCase();
+  const filter = document.getElementById("content-filter").value || "all";
+  const assets = state.contentAssets.filter(asset => {
+    const matchesType = filter === "all" || contentGroup(asset) === filter;
+    const matchesText = !query || asset.path.toLowerCase().includes(query);
+    return matchesType && matchesText;
+  });
+  document.getElementById("content-count").textContent = `${assets.length} recurso${assets.length === 1 ? "" : "s"}`;
+  grid.innerHTML = "";
+  if (!assets.length) {
+    const empty = document.createElement("div");
+    empty.className = "content-empty";
+    empty.textContent = state.activeProjPath ? "No hay recursos que coincidan. Importá modelos, materiales o texturas para empezar." : "Abrí un proyecto para explorar sus recursos.";
+    grid.appendChild(empty);
+    return;
+  }
+  const icons = { obj: "◇", mtl: "◈", png: "▧", jpg: "▧", jpeg: "▧", webp: "▧", wav: "♫", ogg: "♫" };
+  assets.forEach(asset => {
+    const card = document.createElement("div");
+    card.className = "asset-card" + (asset.path === state.selectedAssetPath ? " selected" : "");
+    card.title = `${asset.path}\n${asset.source === "profile" ? "Recurso del perfil Subsuelo04" : "Recurso del proyecto"}`;
+    card.draggable = asset.type === "obj";
+    const icon = document.createElement("div");
+    icon.className = "asset-icon";
+    icon.textContent = icons[asset.type] || "·";
+    let preview = icon;
+    if (contentGroup(asset) === "image") {
+      const thumb = document.createElement("img");
+      thumb.className = "asset-thumb";
+      thumb.alt = "";
+      thumb.loading = "lazy";
+      thumb.src = `/api/project-asset?path=${encodeURIComponent(state.activeProjPath)}&file=${encodeURIComponent(asset.path)}`;
+      preview = thumb;
+    }
+    const name = document.createElement("div");
+    name.className = "asset-card-name";
+    name.textContent = asset.name;
+    const path = document.createElement("div");
+    path.className = "asset-card-path";
+    path.textContent = asset.path;
+    card.append(preview, name, path);
+    card.onclick = () => {
+      state.selectedAssetPath = asset.path;
+      renderContentBrowser();
+      if (asset.type === "obj") {
+        const entity = state.mapData && state.mapData.entities && state.mapData.entities[state.selectedEntityIdx];
+        if (entity) {
+          entity.model = asset.path;
+          renderEntityInspector();
+          log(`Modelo asignado: ${asset.path}`);
+        } else {
+          log("Seleccioná una entidad para asignarle este modelo OBJ.");
+        }
+      }
+    };
+    card.ondragstart = ev => {
+      ev.dataTransfer.setData("text/hk-asset", asset.path);
+      ev.dataTransfer.effectAllowed = "copy";
+    };
+    grid.appendChild(card);
+  });
+}
+
+async function refreshContentBrowser() {
+  if (!state.activeProjPath) { state.contentAssets = []; renderContentBrowser(); return; }
+  const data = await api(`/api/content?path=${encodeURIComponent(state.activeProjPath)}`);
+  state.contentAssets = data.assets || [];
+  renderContentBrowser();
+}
+
 function renderLists() {
   const ml = document.getElementById("map-list");
   ml.innerHTML = "";
@@ -188,28 +277,6 @@ function renderLists() {
     li.innerHTML = `<span>${s}</span><span class="tree-tag">JS</span>`;
     li.onclick = () => { loadScript(s); switchTab("script"); };
     sl.appendChild(li);
-  });
-
-  const models = document.getElementById("model-list");
-  models.innerHTML = "";
-  document.getElementById("model-count").textContent = String(state.modelAssets.length);
-  state.modelAssets.forEach(path => {
-    const li = document.createElement("li");
-    li.title = "Asignar a la entidad seleccionada";
-    const name = document.createElement("span");
-    name.textContent = path.split("/").pop();
-    const tag = document.createElement("span");
-    tag.className = "tree-tag";
-    tag.textContent = "OBJ";
-    li.append(name, tag);
-    li.onclick = () => {
-      const entity = state.mapData && state.mapData.entities && state.mapData.entities[state.selectedEntityIdx];
-      if (!entity) { log("Seleccioná una entidad y después elegí el modelo OBJ."); return; }
-      entity.model = path;
-      renderEntityInspector();
-      log(`Modelo asignado: ${path}`);
-    };
-    models.appendChild(li);
   });
 
   const el = document.getElementById("entity-list");
@@ -281,6 +348,8 @@ function syncInspectorFields() {
 async function loadProject(path) {
   state.activeProjPath = path;
   state.previewAssetPath = "";
+  state.contentAssets = [];
+  state.selectedAssetPath = "";
   const data = await api(`/api/project?path=${encodeURIComponent(path)}`);
   state.project = data.project;
   state.modelAssets = data.models || [];
@@ -292,9 +361,12 @@ async function loadProject(path) {
   state.maps = data.maps;
   state.scripts = data.scripts;
   state.selectedEntityIdx = -1;
+  await refreshContentBrowser();
   syncInspectorFields();
   if (state.maps.length) await loadMap(state.maps[0]);
   if (state.scripts.length) await loadScript(state.scripts[0]);
+  if (state.activeTab === "viewport") await loadPreviewAssets();
+  if (state.playActive) initPlayPreview();
   log(`Proyecto cargado: ${state.project.name} (${path})`);
 }
 
@@ -303,6 +375,7 @@ async function loadMap(name) {
   const data = await api(`/api/map?path=${encodeURIComponent(state.activeProjPath)}&name=${encodeURIComponent(name)}`);
   state.mapData = data.map;
   state.selectedEntityIdx = -1;
+  frameViewportScene();
   syncInspectorFields();
   renderLists();
   renderEntityInspector();
@@ -372,7 +445,173 @@ function switchTab(name) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
   document.querySelectorAll(".tab-panel").forEach(p => p.classList.toggle("active", p.id === "tab-" + name));
   state.playActive = (name === "play");
+  state.activeTab = name;
+  if (name === "viewport" || name === "play") mountRendererCanvas(name);
   if (state.playActive) initPlayPreview();
+  if (name === "viewport") {
+    loadPreviewAssets().catch(e => log("ERROR cargando recursos para el viewport: " + e.message));
+    if (!state.viewportLoopRunning) {
+      state.viewportLoopRunning = true;
+      requestAnimationFrame(tickEditorViewport);
+    }
+  }
+}
+
+function mountRendererCanvas(tab) {
+  const canvas = document.getElementById("play-gl-canvas");
+  const host = document.getElementById(tab === "play" ? "play-stage" : "viewport-canvas-host");
+  if (!canvas || !host) return;
+  if (canvas.parentElement !== host) host.insertBefore(canvas, host.firstChild);
+  if (tab === "play") {
+    canvas.width = 960;
+    canvas.height = 540;
+    canvas.style.width = "";
+    canvas.style.height = "";
+  } else {
+    resizeViewportCanvas();
+  }
+}
+
+function resizeViewportCanvas() {
+  if (state.activeTab !== "viewport") return;
+  const host = document.getElementById("viewport-canvas-host");
+  const canvas = document.getElementById("play-gl-canvas");
+  if (!host || !canvas) return;
+  const rect = host.getBoundingClientRect();
+  if (rect.width < 2 || rect.height < 2) return;
+  const ratio = Math.min(2, window.devicePixelRatio || 1);
+  const width = Math.max(1, Math.round(rect.width * ratio));
+  const height = Math.max(1, Math.round(rect.height * ratio));
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+}
+
+function frameViewportScene() {
+  if (!state.mapData || !state.mapData.grid || !state.mapData.grid.length) return;
+  const rows = state.mapData.grid.length;
+  const cols = state.mapData.grid[0].length;
+  state.viewportCamera = {
+    target: [cols, 0, rows],
+    yaw: 0.72,
+    pitch: 0.76,
+    distance: Math.max(12, Math.max(rows, cols) * 2.45)
+  };
+}
+
+function frameViewportSelection() {
+  const entity = state.mapData && state.mapData.entities && state.mapData.entities[state.selectedEntityIdx];
+  if (!entity) { frameViewportScene(); return; }
+  if (!state.viewportCamera) frameViewportScene();
+  state.viewportCamera.target = [entity.x * 2, 0, entity.y * 2];
+  state.viewportCamera.distance = 7;
+}
+
+function tickEditorViewport() {
+  if (state.activeTab !== "viewport") { state.viewportLoopRunning = false; return; }
+  resizeViewportCanvas();
+  if (state.mapData && typeof HKPCRenderer !== "undefined") {
+    const ok = HKPCRenderer.renderEditorScene(state.mapData, state.viewportCamera, state.selectedEntityIdx);
+    if (ok) {
+      const stats = HKPCRenderer.getStats();
+      document.getElementById("viewport-stats").textContent = `WebGL · ${stats.triangles.toLocaleString()} tris · ${stats.drawCalls} draw calls`;
+    }
+  }
+  requestAnimationFrame(tickEditorViewport);
+}
+
+function pickViewportEntity(clientX, clientY) {
+  const canvas = document.getElementById("play-gl-canvas");
+  const rect = canvas.getBoundingClientRect();
+  const map = state.mapData;
+  if (!map || !map.entities || !state.viewportCamera || !rect.width || !rect.height) return -1;
+  const camera = state.viewportCamera;
+  const yaw = Number(camera.yaw) || 0.72;
+  const pitch = Math.max(0.12, Math.min(1.43, Number(camera.pitch) || 0.76));
+  const distance = Math.max(3, Number(camera.distance) || 20);
+  const target = camera.target;
+  const horizontal = Math.cos(pitch) * distance;
+  const eye = [target[0] + Math.sin(yaw) * horizontal, target[1] + Math.sin(pitch) * distance, target[2] + Math.cos(yaw) * horizontal];
+  const forward = [target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]];
+  const forwardLen = Math.hypot(...forward) || 1;
+  for (let i = 0; i < 3; i++) forward[i] /= forwardLen;
+  const right = [Math.cos(yaw), 0, -Math.sin(yaw)];
+  const up = [right[1] * forward[2] - right[2] * forward[1], right[2] * forward[0] - right[0] * forward[2], right[0] * forward[1] - right[1] * forward[0]];
+  const focal = rect.height * 0.5 / Math.tan(52 * Math.PI / 360);
+  const px = clientX - rect.left, py = clientY - rect.top;
+  let best = -1, bestDistance = 28;
+  map.entities.forEach((entity, index) => {
+    const relative = [entity.x * 2 - eye[0], 0.65 - eye[1], entity.y * 2 - eye[2]];
+    const depth = relative[0] * forward[0] + relative[1] * forward[1] + relative[2] * forward[2];
+    if (depth <= 0) return;
+    const screenX = rect.width * 0.5 + (relative[0] * right[0] + relative[1] * right[1] + relative[2] * right[2]) * focal / depth;
+    const screenY = rect.height * 0.5 - (relative[0] * up[0] + relative[1] * up[1] + relative[2] * up[2]) * focal / depth;
+    const delta = Math.hypot(screenX - px, screenY - py);
+    if (delta < bestDistance) { bestDistance = delta; best = index; }
+  });
+  return best;
+}
+
+function bindViewportControls() {
+  if (state.viewportControlsBound) return;
+  state.viewportControlsBound = true;
+  const canvas = document.getElementById("play-gl-canvas");
+  canvas.addEventListener("contextmenu", ev => ev.preventDefault());
+  canvas.addEventListener("pointerdown", ev => {
+    if (state.activeTab !== "viewport") return;
+    canvas.setPointerCapture(ev.pointerId);
+    state.viewportDrag = { x: ev.clientX, y: ev.clientY, button: ev.button, moved: false };
+  });
+  canvas.addEventListener("pointermove", ev => {
+    if (!state.viewportDrag || state.activeTab !== "viewport") return;
+    const drag = state.viewportDrag;
+    const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 2) drag.moved = true;
+    if (!state.viewportCamera) frameViewportScene();
+    const camera = state.viewportCamera;
+    if (drag.button === 2 || drag.button === 1) {
+      const scale = camera.distance / Math.max(140, canvas.clientHeight) * 1.8;
+      const yaw = camera.yaw;
+      const right = [Math.cos(yaw), -Math.sin(yaw)];
+      const forward = [-Math.sin(yaw), -Math.cos(yaw)];
+      camera.target[0] += (-dx * right[0] + dy * forward[0]) * scale;
+      camera.target[2] += (-dx * right[1] + dy * forward[1]) * scale;
+    } else {
+      camera.yaw -= dx * 0.008;
+      camera.pitch = Math.max(0.12, Math.min(1.43, camera.pitch + dy * 0.006));
+    }
+    drag.x = ev.clientX;
+    drag.y = ev.clientY;
+  });
+  canvas.addEventListener("pointerup", ev => {
+    if (!state.viewportDrag) return;
+    if (!state.viewportDrag.moved && state.activeTab === "viewport") {
+      state.selectedEntityIdx = pickViewportEntity(ev.clientX, ev.clientY);
+      renderLists();
+      renderEntityInspector();
+    }
+    state.viewportDrag = null;
+  });
+  canvas.addEventListener("wheel", ev => {
+    if (state.activeTab !== "viewport") return;
+    ev.preventDefault();
+    if (!state.viewportCamera) frameViewportScene();
+    state.viewportCamera.distance = Math.max(4, Math.min(220, state.viewportCamera.distance * Math.exp(ev.deltaY * 0.001)));
+  }, { passive: false });
+  canvas.addEventListener("dragover", ev => { if (ev.dataTransfer.types.includes("text/hk-asset")) { ev.preventDefault(); ev.dataTransfer.dropEffect = "copy"; } });
+  canvas.addEventListener("drop", ev => {
+    const path = ev.dataTransfer.getData("text/hk-asset");
+    if (!path || !state.mapData) return;
+    ev.preventDefault();
+    const entity = state.mapData.entities && state.mapData.entities[state.selectedEntityIdx];
+    if (!entity) { log("Seleccioná una entidad para asignarle el modelo arrastrado."); return; }
+    entity.model = path;
+    state.selectedAssetPath = path;
+    renderEntityInspector();
+    renderContentBrowser();
+    log(`Modelo asignado: ${path}`);
+  });
 }
 
 // Vista previa 3D interactiva en vivo dentro del editor
@@ -496,6 +735,16 @@ async function boot() {
   window.addEventListener("mouseup", () => { state.painting = false; });
 
   document.querySelectorAll(".tab").forEach(t => { t.onclick = () => switchTab(t.dataset.tab); });
+  document.getElementById("content-search").oninput = renderContentBrowser;
+  document.getElementById("content-filter").onchange = renderContentBrowser;
+  document.getElementById("btn-frame-scene").onclick = frameViewportScene;
+  document.getElementById("btn-frame-selection").onclick = frameViewportSelection;
+  bindViewportControls();
+  if (!state.viewportObserver) {
+    state.viewportObserver = new ResizeObserver(resizeViewportCanvas);
+    state.viewportObserver.observe(document.getElementById("viewport-canvas-host"));
+    window.addEventListener("resize", resizeViewportCanvas);
+  }
   document.getElementById("btn-save").onclick = () => saveAll().catch(e => log("ERROR: " + e.message));
   document.getElementById("btn-play").onclick = () => switchTab("play");
   document.getElementById("btn-target").onclick = openPlatformChooser;
@@ -522,6 +771,8 @@ async function boot() {
         log(`Recurso importado: ${result.path}`);
       } catch (e) { log(`ERROR importando ${file.name}: ${e.message}`); }
     }
+    await refreshContentBrowser().catch(e => log("ERROR actualizando el navegador de contenido: " + e.message));
+    if (state.activeTab === "viewport" || state.playActive) await loadPreviewAssets().catch(e => log("ERROR actualizando los recursos 3D: " + e.message));
     ev.target.value = "";
   };
   document.getElementById("btn-reset-play").onclick = initPlayPreview;

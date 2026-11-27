@@ -37,6 +37,9 @@ const HKPCRenderer = (function () {
     let whiteTexture = null;
     let worldKey = "";
     let worldMeshes = [];
+    let editorGridMesh = null;
+    let editorGridKey = "";
+    let selectionMesh = null;
     let cubeMesh = null;
     let assetBase = window.HK_ASSET_BASE || "";
     let drawCalls = 0;
@@ -164,7 +167,8 @@ const HKPCRenderer = (function () {
         for (let i = 0; i < meshes.length; i++) if (meshes[i].buffer) gl.deleteBuffer(meshes[i].buffer);
     }
 
-    function buildWorld(grid) {
+    function buildWorld(grid, includeCeiling) {
+        if (includeCeiling === undefined) includeCeiling = true;
         const buckets = Object.create(null);
         const h = grid.length, w = grid[0] ? grid[0].length : 0;
         for (let y = 0; y < h; y++) {
@@ -172,7 +176,7 @@ const HKPCRenderer = (function () {
                 if (grid[y][x] !== 0) continue;
                 const x0 = x * CELL, x1 = (x + 1) * CELL, z0 = y * CELL, z1 = (y + 1) * CELL;
                 addWorldMesh(buckets, "floor", [[x0, 0, z0], [x0, 0, z1], [x1, 0, z1], [x1, 0, z0]], [0, 1, 0], tileColors[0], 1);
-                addWorldMesh(buckets, "ceiling", [[x0, WALL_H, z0], [x0, WALL_H, z1], [x1, WALL_H, z1], [x1, WALL_H, z0]], [0, -1, 0], tileColors[0], 1);
+                if (includeCeiling) addWorldMesh(buckets, "ceiling", [[x0, WALL_H, z0], [x0, WALL_H, z1], [x1, WALL_H, z1], [x1, WALL_H, z0]], [0, -1, 0], tileColors[0], 1);
             }
         }
         for (let y = 0; y < h; y++) {
@@ -182,6 +186,7 @@ const HKPCRenderer = (function () {
                 const x0 = x * CELL, x1 = (x + 1) * CELL, z0 = y * CELL, z1 = (y + 1) * CELL;
                 const color = tileColors[type] || tileColors[1];
                 const visible = (nx, ny) => !grid[ny] || grid[ny][nx] === undefined || grid[ny][nx] === 0;
+                if (!includeCeiling) addWorldMesh(buckets, "wall" + type, [[x0, WALL_H, z0], [x1, WALL_H, z0], [x1, WALL_H, z1], [x0, WALL_H, z1]], [0, 1, 0], color, 1);
                 if (visible(x, y - 1)) addWorldMesh(buckets, "wall" + type, [[x0, 0, z0], [x1, 0, z0], [x1, WALL_H, z0], [x0, WALL_H, z0]], [0, 0, -1], color, 1);
                 if (visible(x + 1, y)) addWorldMesh(buckets, "wall" + type, [[x1, 0, z0], [x1, 0, z1], [x1, WALL_H, z1], [x1, WALL_H, z0]], [1, 0, 0], color, 1);
                 if (visible(x, y + 1)) addWorldMesh(buckets, "wall" + type, [[x1, 0, z1], [x0, 0, z1], [x0, WALL_H, z1], [x1, WALL_H, z1]], [0, 0, 1], color, 1);
@@ -205,6 +210,38 @@ const HKPCRenderer = (function () {
             for (let x = 0; x < row.length; x++) hash = Math.imul(hash ^ (row[x] | 0), 16777619);
         }
         return grid.length + ":" + hash;
+    }
+
+    function makeEditorGrid(grid) {
+        const rows = grid.length, cols = grid[0] ? grid[0].length : 0;
+        const out = [];
+        const color = [0.14, 0.19, 0.25, 1];
+        function line(x0, z0, x1, z1) {
+            appendVertex(out, [x0, 0.025, z0], [0, 1, 0], [0, 0], color);
+            appendVertex(out, [x1, 0.025, z1], [0, 1, 0], [0, 0], color);
+        }
+        for (let x = 0; x <= cols; x++) line(x * CELL, 0, x * CELL, rows * CELL);
+        for (let z = 0; z <= rows; z++) line(0, z * CELL, cols * CELL, z * CELL);
+        const mesh = makeGpuMesh(out, "");
+        if (mesh) mesh.primitive = gl.LINES;
+        return mesh;
+    }
+
+    function makeSelectionFrame() {
+        const out = [];
+        const points = [
+            [-0.5, 0, -0.5], [0.5, 0, -0.5], [0.5, 1, -0.5], [-0.5, 1, -0.5],
+            [-0.5, 0, 0.5], [0.5, 0, 0.5], [0.5, 1, 0.5], [-0.5, 1, 0.5]
+        ];
+        const edges = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+        const color = [1, 0.76, 0.18, 1];
+        for (let i = 0; i < edges.length; i++) {
+            appendVertex(out, points[edges[i][0]], [0, 1, 0], [0, 0], color);
+            appendVertex(out, points[edges[i][1]], [0, 1, 0], [0, 0], color);
+        }
+        const mesh = makeGpuMesh(out, "");
+        if (mesh) mesh.primitive = gl.LINES;
+        return mesh;
     }
 
     function matrixIdentity() {
@@ -412,18 +449,18 @@ const HKPCRenderer = (function () {
         gl.bindTexture(gl.TEXTURE_2D, useTexture ? loadTexture(mesh.texture) : whiteTexture);
         gl.uniform1i(uniform.texture, 0);
         gl.uniform1i(uniform.useTexture, useTexture ? 1 : 0);
-        gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
+        gl.drawArrays(mesh.primitive || gl.TRIANGLES, 0, mesh.count);
         drawCalls++;
-        triangles += mesh.count / 3;
+        if (mesh.primitive !== gl.LINES) triangles += mesh.count / 3;
     }
 
     function renderScene(scene) {
         if (!gl && !init()) return false;
         if (!scene || !scene.grid || !scene.grid.length) return false;
-        const gridKey = hashGrid(scene.grid);
+        const gridKey = hashGrid(scene.grid) + ":runtime";
         if (gridKey !== worldKey) {
             releaseMeshes(worldMeshes);
-            worldMeshes = buildWorld(scene.grid);
+            worldMeshes = buildWorld(scene.grid, true);
             worldKey = gridKey;
         }
         const atmo = scene.atmosphere || { clearR: 8, clearG: 10, clearB: 16 };
@@ -468,6 +505,76 @@ const HKPCRenderer = (function () {
         return true;
     }
 
+    function renderEditorScene(map, camera, selectedIndex) {
+        if (!gl && !init("play-gl-canvas")) return false;
+        if (!map || !map.grid || !map.grid.length) return false;
+        const grid = map.grid;
+        const gridKey = hashGrid(grid) + ":editor";
+        if (gridKey !== worldKey) {
+            releaseMeshes(worldMeshes);
+            worldMeshes = buildWorld(grid, false);
+            worldKey = gridKey;
+        }
+        const gridSizeKey = grid.length + ":" + (grid[0] ? grid[0].length : 0);
+        if (gridSizeKey !== editorGridKey) {
+            if (editorGridMesh) releaseMeshes([editorGridMesh]);
+            editorGridMesh = makeEditorGrid(grid);
+            editorGridKey = gridSizeKey;
+        }
+        if (!selectionMesh) selectionMesh = makeSelectionFrame();
+
+        const rows = grid.length, cols = grid[0] ? grid[0].length : 0;
+        const viewCamera = camera || {};
+        const target = viewCamera.target || [cols * CELL * 0.5, 0, rows * CELL * 0.5];
+        const yaw = Number(viewCamera.yaw) || 0.72;
+        const pitch = Math.max(0.12, Math.min(1.43, Number(viewCamera.pitch) || 0.76));
+        const distance = Math.max(3, Number(viewCamera.distance) || Math.max(cols, rows) * CELL * 1.25);
+        const horizontal = Math.cos(pitch) * distance;
+        const eye = [target[0] + Math.sin(yaw) * horizontal, target[1] + Math.sin(pitch) * distance, target[2] + Math.cos(yaw) * horizontal];
+        const view = lookAt(eye, target);
+        const projection = perspective(52, (canvas.width || 960) / (canvas.height || 540), 0.12, Math.max(180, distance * 5));
+        const fog = [12 / 255, 16 / 255, 23 / 255];
+        const identity = matrixIdentity();
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.clearColor(fog[0], fog[1], fog[2], 1);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        gl.useProgram(program);
+        gl.uniformMatrix4fv(uniform.view, false, view);
+        gl.uniform1i(uniform.texture, 0);
+        drawCalls = 0; triangles = 0;
+        const ambient = [0.49, 0.51, 0.55];
+        const lightDir = [0.35, -1.0, 0.25];
+        for (let i = 0; i < worldMeshes.length; i++) bindMesh(worldMeshes[i], identity, view, projection, fog, ambient, lightDir);
+        if (editorGridMesh) bindMesh(editorGridMesh, identity, view, projection, fog, ambient, lightDir);
+
+        const spawn = map.spawn || { x: 2.5, y: 2.5 };
+        const cube = makeCube();
+        const spawnModel = modelMatrix([spawn.x * CELL, 0.025, spawn.y * CELL], Number(spawn.ang) || 0, { x: 0.36, y: 0.12, z: 0.36 });
+        bindMesh(cube, spawnModel, view, projection, fog, ambient, lightDir, [0.13, 0.85, 0.45, 1]);
+
+        const entities = map.entities || [];
+        for (let i = 0; i < entities.length; i++) {
+            const entity = entities[i];
+            const selected = i === selectedIndex;
+            const position = [entity.x * CELL, Number(entity.modelY) || 0, entity.y * CELL];
+            const model = entity.model ? getModel(entity.model) : null;
+            const scale = Number(entity.modelScale) > 0 ? Number(entity.modelScale) : 0.55;
+            const transform = modelMatrix(position, Number(entity.rotationY) || 0, { x: model && model.length ? scale : 0.68, y: model && model.length ? scale : 1.12, z: model && model.length ? scale : 0.68 });
+            if (model && model.length) {
+                const tint = selected ? [1.22, 0.91, 0.36, 1] : [1, 1, 1, 1];
+                for (let mi = 0; mi < model.length; mi++) bindMesh(model[mi], transform, view, projection, fog, ambient, lightDir, tint);
+            } else {
+                const color = selected ? [1, 0.67, 0.16, 1] : (kinds[entity.kind] || [0.84, 0.84, 0.86, 1]);
+                bindMesh(cube, transform, view, projection, fog, ambient, lightDir, color);
+            }
+            if (selected && selectionMesh) {
+                const frame = modelMatrix([position[0], position[1], position[2]], Number(entity.rotationY) || 0, { x: model && model.length ? scale * 1.18 : 0.82, y: model && model.length ? scale * 1.18 : 1.34, z: model && model.length ? scale * 1.18 : 0.82 });
+                bindMesh(selectionMesh, frame, view, projection, fog, ambient, lightDir, [1, 0.76, 0.18, 1]);
+            }
+        }
+        return true;
+    }
+
     function setAssetSources(objFiles, baseUrl) {
         for (const key in ASSET_TEXT) delete ASSET_TEXT[key];
         Object.assign(ASSET_TEXT, objFiles || {});
@@ -482,9 +589,12 @@ const HKPCRenderer = (function () {
             delete textures[key];
         }
         if (worldMeshes.length) releaseMeshes(worldMeshes);
+        if (editorGridMesh) releaseMeshes([editorGridMesh]);
+        if (selectionMesh) releaseMeshes([selectionMesh]);
+        editorGridMesh = null; editorGridKey = ""; selectionMesh = null;
         worldMeshes = [];
         worldKey = "";
     }
 
-    return { init: init, renderScene: renderScene, setAssetSources: setAssetSources, getStats: function () { return { drawCalls: drawCalls, triangles: triangles }; } };
+    return { init: init, renderScene: renderScene, renderEditorScene: renderEditorScene, setAssetSources: setAssetSources, getStats: function () { return { drawCalls: drawCalls, triangles: triangles }; } };
 })();
