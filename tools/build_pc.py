@@ -14,6 +14,7 @@ ENGINE_ROOT = Path(__file__).resolve().parent.parent
 PC_CORE_FILES = [
     "engine/core/math.js",
     "engine/core/platform_pc.js",
+    "engine/core/renderer_pc_webgl.js",
     "engine/core/physics.js",
     "engine/core/renderer3d.js",
     "engine/core/scene.js",
@@ -159,6 +160,29 @@ def export_pc(project_dir: Path, out_dir: Path) -> Path:
     proj = json.loads((project_dir / "project.json").read_text(encoding="utf-8"))
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    profile_textures = ENGINE_ROOT / "engine/profiles/subsuelo04/assets/textures"
+    if profile_textures.is_dir():
+        shutil.copytree(profile_textures, out_dir / "assets/textures", dirs_exist_ok=True)
+    project_assets = project_dir / "assets"
+    if project_assets.is_dir():
+        shutil.copytree(project_assets, out_dir / "assets", dirs_exist_ok=True)
+
+    manifest = []
+    obj_preload = {}
+    if (out_dir / "assets").is_dir():
+        for asset in sorted((out_dir / "assets").rglob("*")):
+            if not asset.is_file():
+                continue
+            rel = asset.relative_to(out_dir).as_posix()
+            manifest.append(rel)
+            if asset.suffix.lower() in (".obj", ".mtl"):
+                obj_preload[rel] = asset.read_text(encoding="utf-8", errors="ignore")
+    (out_dir / "asset_manifest.js").write_text(
+        f"window.HK_ASSET_MANIFEST = {json.dumps(manifest, ensure_ascii=False)};\n"
+        f"window.HK_OBJ_FILES = {json.dumps(obj_preload, ensure_ascii=False)};\n",
+        encoding="utf-8",
+    )
+
     maps_dict = {}
     for mp in sorted((project_dir / "maps").glob("*.json")):
         maps_dict[mp.stem] = json.loads(mp.read_text(encoding="utf-8"))
@@ -183,14 +207,23 @@ def export_pc(project_dir: Path, out_dir: Path) -> Path:
 <html lang="es">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title>
 <style>
-  html, body {{ margin: 0; height: 100%; background: #05060a; display: flex; align-items: center; justify-content: center; overflow: hidden; }}
-  canvas {{ width: min(100vw, calc(100vh * 640 / 448)); height: auto; image-rendering: pixelated; box-shadow: 0 20px 60px rgba(0,0,0,0.75); border: 1px solid #1e293b; }}
+  html, body {{ margin: 0; height: 100%; background: #05060a; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; font-family: system-ui, sans-serif; color: #94a3b8; }}
+  .stage {{ position: relative; width: min(100vw, calc((100vh - 34px) * 16 / 9)); aspect-ratio: 16 / 9; box-shadow: 0 20px 70px rgba(0,0,0,0.8); border: 1px solid #263448; }}
+  .stage canvas {{ position: absolute; inset: 0; display: block; width: 100%; height: 100%; }}
+  #hk-canvas {{ pointer-events: none; }}
+  .bar {{ margin-top: 7px; font-size: 12px; }}
 </style>
 </head>
 <body>
-<canvas id="hk-canvas" width="640" height="448"></canvas>
+<div class="stage">
+<canvas id="hk-gl-canvas" width="960" height="540"></canvas>
+<canvas id="hk-canvas" width="960" height="540"></canvas>
+</div>
+<div class="bar">WASD mover · Mouse o flechas mirar · Shift correr · C sigilo · E interactuar · F luz · Esc pausa</div>
+<script src="asset_manifest.js"></script>
 <script src="game_bundle.js"></script>
 </body>
 </html>
@@ -198,8 +231,11 @@ def export_pc(project_dir: Path, out_dir: Path) -> Path:
         encoding="utf-8",
     )
 
-    write_launcher_and_bat(out_dir, title, project_dir.name, ["index.html;.", "game_bundle.js;."])
-    print(f"[PC EXPORT OK] {out_dir}")
+    add_data = ["index.html;.", "asset_manifest.js;.", "game_bundle.js;."]
+    if (out_dir / "assets").is_dir():
+        add_data.append("assets;assets")
+    write_launcher_and_bat(out_dir, title, project_dir.name, add_data)
+    print(f"[PC EXPORT OK — WEBGL] {out_dir} ({len(manifest)} assets, {len(obj_preload)} OBJ/MTL resources)")
     print("  - Probar ahora: python launcher_pc.py")
     print("  - Generar .exe en Windows: ejecutar build_exe.bat")
     return out_dir

@@ -7,6 +7,7 @@ const state = {
   project: null,
   maps: [],
   scripts: [],
+  modelAssets: [],
   activeMapName: "",
   mapData: null,
   activeScriptName: "",
@@ -15,7 +16,9 @@ const state = {
   painting: false,
   playActive: false,
   playPlayer: null,
-  playKeys: {}
+  playKeys: {},
+  targetPlatform: "pc",
+  previewAssetPath: ""
 };
 
 const PALETTE = [
@@ -40,6 +43,44 @@ function log(msg) {
   const ts = new Date().toLocaleTimeString();
   out.textContent += `[${ts}] ${msg}\n`;
   out.scrollTop = out.scrollHeight;
+}
+
+function escapeHtml(value) {
+  return String(value == null ? "" : value).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[ch]);
+}
+
+function setTargetPlatform(platform) {
+  state.targetPlatform = platform === "ps2" ? "ps2" : "pc";
+  localStorage.setItem("hk_target_platform", state.targetPlatform);
+  updateTargetBadge();
+  if (state.project) {
+    state.project.targetPlatform = state.targetPlatform;
+    state.project.targetPS2 = true;
+    state.project.targetPC = true;
+    state.project.rendererProfile = state.targetPlatform === "ps2" ? "athena-vu1" : "webgl-high";
+    state.project.graphicsProfile = state.targetPlatform === "ps2" ? "subsuelo04" : "pc-high";
+  }
+  document.getElementById("platform-chooser").hidden = true;
+  log(`Entorno configurado para ${state.targetPlatform === "ps2" ? "PlayStation 2 · AthenaEnv V4 · perfil Subsuelo04" : "PC · WebGL de alta calidad"}.`);
+}
+
+function updateTargetBadge() {
+  const button = document.getElementById("btn-target");
+  if (!button) return;
+  document.body.dataset.target = state.targetPlatform;
+  button.textContent = state.targetPlatform === "ps2" ? "Perfil: PS2" : "Perfil: PC";
+  button.classList.toggle("ps2-target", state.targetPlatform === "ps2");
+  const ps2Export = document.getElementById("btn-export-ps2");
+  const pcExport = document.getElementById("btn-export-pc");
+  if (ps2Export && pcExport) {
+    ps2Export.classList.toggle("target-export", state.targetPlatform === "ps2");
+    pcExport.classList.toggle("target-export", state.targetPlatform === "pc");
+  }
+  updateBudgetBadge();
+}
+
+function openPlatformChooser() {
+  document.getElementById("platform-chooser").hidden = false;
 }
 
 async function api(url, opts) {
@@ -117,7 +158,15 @@ function drawMapCanvas() {
     }
   });
 
-  document.getElementById("ps2-budget").textContent = `PS2 Est.: ~${estimateTris(grid)} tris`;
+  updateBudgetBadge();
+}
+
+function updateBudgetBadge() {
+  const badge = document.getElementById("ps2-budget");
+  if (!badge) return;
+  badge.textContent = state.targetPlatform === "ps2"
+    ? `PS2 Est.: ~${estimateTris(state.mapData && state.mapData.grid)} tris`
+    : "PC · WebGL · Modelos 3D";
 }
 
 function renderLists() {
@@ -141,6 +190,28 @@ function renderLists() {
     sl.appendChild(li);
   });
 
+  const models = document.getElementById("model-list");
+  models.innerHTML = "";
+  document.getElementById("model-count").textContent = String(state.modelAssets.length);
+  state.modelAssets.forEach(path => {
+    const li = document.createElement("li");
+    li.title = "Asignar a la entidad seleccionada";
+    const name = document.createElement("span");
+    name.textContent = path.split("/").pop();
+    const tag = document.createElement("span");
+    tag.className = "tree-tag";
+    tag.textContent = "OBJ";
+    li.append(name, tag);
+    li.onclick = () => {
+      const entity = state.mapData && state.mapData.entities && state.mapData.entities[state.selectedEntityIdx];
+      if (!entity) { log("Seleccioná una entidad y después elegí el modelo OBJ."); return; }
+      entity.model = path;
+      renderEntityInspector();
+      log(`Modelo asignado: ${path}`);
+    };
+    models.appendChild(li);
+  });
+
   const el = document.getElementById("entity-list");
   el.innerHTML = "";
   ((state.mapData && state.mapData.entities) || []).forEach((e, idx) => {
@@ -161,17 +232,27 @@ function renderEntityInspector() {
     return;
   }
   box.innerHTML = `
-    <label>Tipo<input id="ent-kind" value="${e.kind}" readonly></label>
-    <label>Etiqueta<input id="ent-label" value="${e.label || ""}"></label>
-    <label>Dialogo / Nota<input id="ent-dialog" value="${e.dialog || ""}"></label>
+    <label>Tipo<input id="ent-kind" value="${escapeHtml(e.kind)}" readonly></label>
+    <label>Etiqueta<input id="ent-label" value="${escapeHtml(e.label || "")}"></label>
+    <label>Dialogo / Nota<input id="ent-dialog" value="${escapeHtml(e.dialog || "")}"></label>
+    <label>Modelo 3D (ruta OBJ)<input id="ent-model" value="${escapeHtml(e.model || "")}" placeholder="assets/models/mi_modelo.obj"></label>
     <div class="row-3">
-      <label>X<input id="ent-x" type="number" step="0.5" value="${e.x}"></label>
-      <label>Y<input id="ent-y" type="number" step="0.5" value="${e.y}"></label>
+      <label>Escala<input id="ent-model-scale" type="number" step="0.05" min="0.05" value="${escapeHtml(e.modelScale || 0.55)}"></label>
+      <label>Giro Y (rad)<input id="ent-model-rotation" type="number" step="0.1" value="${escapeHtml(e.rotationY || 0)}"></label>
+      <label>Altura<input id="ent-model-y" type="number" step="0.1" value="${escapeHtml(e.modelY || 0)}"></label>
+    </div>
+    <div class="row-3">
+      <label>X<input id="ent-x" type="number" step="0.5" value="${escapeHtml(e.x)}"></label>
+      <label>Y<input id="ent-y" type="number" step="0.5" value="${escapeHtml(e.y)}"></label>
       <label>&nbsp;<button id="btn-del-ent" class="mini-btn" style="border-color:#ef4444;color:#fca5a5;">Borrar</button></label>
     </div>
   `;
   document.getElementById("ent-label").oninput = ev => { e.label = ev.target.value; renderLists(); };
   document.getElementById("ent-dialog").oninput = ev => { e.dialog = ev.target.value; };
+  document.getElementById("ent-model").onchange = ev => { e.model = ev.target.value.trim(); };
+  document.getElementById("ent-model-scale").oninput = ev => { e.modelScale = Math.max(0.05, parseFloat(ev.target.value) || 0.55); };
+  document.getElementById("ent-model-rotation").oninput = ev => { e.rotationY = parseFloat(ev.target.value) || 0; };
+  document.getElementById("ent-model-y").oninput = ev => { e.modelY = parseFloat(ev.target.value) || 0; };
   document.getElementById("ent-x").oninput = ev => { e.x = parseFloat(ev.target.value) || 1.5; drawMapCanvas(); };
   document.getElementById("ent-y").oninput = ev => { e.y = parseFloat(ev.target.value) || 1.5; drawMapCanvas(); };
   document.getElementById("btn-del-ent").onclick = () => {
@@ -199,8 +280,15 @@ function syncInspectorFields() {
 
 async function loadProject(path) {
   state.activeProjPath = path;
+  state.previewAssetPath = "";
   const data = await api(`/api/project?path=${encodeURIComponent(path)}`);
   state.project = data.project;
+  state.modelAssets = data.models || [];
+  if (state.project.targetPlatform === "pc" || state.project.targetPlatform === "ps2") {
+    state.targetPlatform = state.project.targetPlatform;
+    localStorage.setItem("hk_target_platform", state.targetPlatform);
+    updateTargetBadge();
+  }
   state.maps = data.maps;
   state.scripts = data.scripts;
   state.selectedEntityIdx = -1;
@@ -233,6 +321,11 @@ async function saveAll() {
   state.project.name = document.getElementById("inp-proj-name").value;
   state.project.genre = document.getElementById("inp-proj-genre").value;
   state.project.author = document.getElementById("inp-proj-author").value;
+  state.project.targetPlatform = state.targetPlatform;
+  state.project.targetPS2 = true;
+  state.project.targetPC = true;
+  state.project.rendererProfile = state.targetPlatform === "ps2" ? "athena-vu1" : "webgl-high";
+  state.project.graphicsProfile = state.targetPlatform === "ps2" ? "subsuelo04" : "pc-high";
   state.mapData.name = document.getElementById("inp-map-name").value;
   state.mapData.atmosphere = {
     clearR: parseInt(document.getElementById("inp-atmo-r").value, 10) || 8,
@@ -287,6 +380,16 @@ function initPlayPreview() {
   if (!state.mapData) return;
   const sp = state.mapData.spawn || { x: 2.5, y: 2.5, ang: 0 };
   state.playPlayer = { x: sp.x, y: sp.y, ang: sp.ang || 0, crouched: false, lightOn: true };
+  loadPreviewAssets().catch(e => log("ERROR cargando recursos para la vista 3D: " + e.message));
+}
+
+async function loadPreviewAssets() {
+  if (!state.activeProjPath || state.previewAssetPath === state.activeProjPath || typeof HKPCRenderer === "undefined") return;
+  const data = await api(`/api/assets?path=${encodeURIComponent(state.activeProjPath)}`);
+  const base = `/api/project-asset?path=${encodeURIComponent(state.activeProjPath)}&file=`;
+  HKPCRenderer.setAssetSources(data.objFiles || {}, base);
+  HKPCRenderer.init("play-gl-canvas");
+  state.previewAssetPath = state.activeProjPath;
 }
 
 function tickPlayPreview() {
@@ -304,6 +407,26 @@ function tickPlayPreview() {
     const nx = pl.x + dx, ny = pl.y + dy;
     if (grid[Math.floor(pl.y)] && grid[Math.floor(pl.y)][Math.floor(nx)] === 0) pl.x = nx;
     if (grid[Math.floor(ny)] && grid[Math.floor(ny)][Math.floor(pl.x)] === 0) pl.y = ny;
+
+    const previewScene = {
+      id: state.activeMapName,
+      grid: grid,
+      atmosphere: state.mapData.atmosphere,
+      entities: state.mapData.entities || [],
+      player: { x: pl.x, y: pl.y, ang: pl.ang, eyeH: pl.crouched ? 1.04 : 1.55, lightOn: pl.lightOn }
+    };
+    if (typeof HKPCRenderer !== "undefined" && HKPCRenderer.renderScene(previewScene)) {
+      const overlay = document.getElementById("play-canvas");
+      const overlayCtx = overlay.getContext("2d");
+      overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+      overlayCtx.fillStyle = "rgba(6, 8, 14, 0.76)";
+      overlayCtx.fillRect(14, 14, 360, 32);
+      overlayCtx.fillStyle = "#facc15";
+      overlayCtx.font = "600 15px monospace";
+      overlayCtx.fillText(`${state.mapData.name} | ${pl.crouched ? "SIGILO" : "DE PIE"} | PC WEBGL`, 24, 35);
+      requestAnimationFrame(tickPlayPreview);
+      return;
+    }
 
     const cv = document.getElementById("play-canvas");
     const ctx = cv.getContext("2d");
@@ -350,6 +473,8 @@ function tickPlayPreview() {
 }
 
 async function boot() {
+  state.targetPlatform = localStorage.getItem("hk_target_platform") || "pc";
+  updateTargetBadge();
   buildPalette();
   const data = await api("/api/projects");
   state.projects = data.projects;
@@ -373,6 +498,32 @@ async function boot() {
   document.querySelectorAll(".tab").forEach(t => { t.onclick = () => switchTab(t.dataset.tab); });
   document.getElementById("btn-save").onclick = () => saveAll().catch(e => log("ERROR: " + e.message));
   document.getElementById("btn-play").onclick = () => switchTab("play");
+  document.getElementById("btn-target").onclick = openPlatformChooser;
+  document.querySelectorAll("[data-platform]").forEach(btn => {
+    btn.onclick = () => setTargetPlatform(btn.dataset.platform);
+  });
+  document.getElementById("btn-import-model").onclick = () => document.getElementById("model-files").click();
+  document.getElementById("model-files").onchange = async ev => {
+    const files = Array.from(ev.target.files || []);
+    for (const file of files) {
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        let binary = "";
+        for (let i = 0; i < bytes.length; i += 0x8000) {
+          binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + 0x8000, bytes.length)));
+        }
+        const result = await api("/api/import-asset", { method: "POST", body: JSON.stringify({ path: state.activeProjPath, filename: file.name, data: btoa(binary) }) });
+        state.previewAssetPath = "";
+        if (file.name.toLowerCase().endsWith(".obj")) {
+          state.modelAssets.push(result.path);
+          state.modelAssets.sort();
+          renderLists();
+        }
+        log(`Recurso importado: ${result.path}`);
+      } catch (e) { log(`ERROR importando ${file.name}: ${e.message}`); }
+    }
+    ev.target.value = "";
+  };
   document.getElementById("btn-reset-play").onclick = initPlayPreview;
   document.getElementById("btn-clear-log").onclick = () => { document.getElementById("console-out").textContent = ""; };
 
@@ -389,10 +540,10 @@ async function boot() {
   };
 
   document.getElementById("btn-new-proj").onclick = async () => {
-    const name = prompt("Nombre del nuevo juego:", "Mi Juego PS2");
+    const name = prompt("Nombre del nuevo juego:", state.targetPlatform === "ps2" ? "Mi Juego PS2" : "Mi Juego PC");
     if (!name) return;
     try {
-      const r = await api("/api/new-project", { method: "POST", body: JSON.stringify({ name, slug: name, template: state.activeProjPath }) });
+      const r = await api("/api/new-project", { method: "POST", body: JSON.stringify({ name, slug: name, template: state.activeProjPath, targetPlatform: state.targetPlatform }) });
       log(`Nuevo proyecto creado en ${r.path}`);
       await boot();
       sel.value = r.path;

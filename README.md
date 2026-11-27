@@ -34,13 +34,15 @@ hk-engine-1/
 │   ├── studio.css
 │   └── studio.js
 ├── engine/
-│   └── core/
+│   ├── core/
 │       ├── math.js               # Aritmética Float64 segura para MIPS (PS2 EE) y empaquetado RGBA
 │       ├── platform_ps2.js       # Backend PlayStation 2 (AthenaEnv V4, DualShock 2, MC0)
 │       ├── platform_pc.js        # Backend PC (Canvas, teclado/mouse, localStorage)
 │       ├── physics.js            # Colisiones AABB con sub-stepping y línea de vista (LOS)
-│       ├── renderer3d.js         # Pipeline 3D VU1 (PS2) + raycaster 3D con pitch/niebla (PC)
+│       ├── renderer3d.js         # Pipeline VU1 (PS2) + selector de render por plataforma
+│       ├── renderer_pc_webgl.js  # Escena WebGL PC, materiales/texturas y carga Wavefront OBJ/MTL
 │       └── scene.js              # Bucle de juego, carga de mapas, movimiento orgánico y hooks
+│   └── profiles/subsuelo04/      # Texturas base del perfil PS2 de HK Entertainment
 ├── tools/
 │   ├── generate_meshes.py        # Compilador de mapas JSON → Wavefront .obj optimizados para PS2 GS
 │   ├── build_ps2.py              # Exportador PlayStation 2 (main.js monolítico + .obj + configs OPL/ISO)
@@ -57,12 +59,13 @@ hk-engine-1/
 
 ### 3.1 Crear un proyecto nuevo
 1. Elegí en el selector superior una de las 3 plantillas (`fps_exploration`, `horror_stealth` o `arcade_arena`).
-2. Hacé clic en **+ Nuevo Proyecto** e ingresá el nombre de tu juego. El editor clonará la plantilla dentro de `projects/<tu_juego>/`.
+2. Al abrir Studio, elegí el perfil **PC** o **PlayStation 2**. Podés volver a cambiarlo desde **Perfil** en cualquier momento.
+3. Hacé clic en **+ Nuevo Proyecto** e ingresá el nombre de tu juego. El editor clonará la plantilla dentro de `projects/<tu_juego>/` y guardará el perfil elegido en `project.json`.
 
 ### 3.2 Editor de Mapas 2D
 - Seleccioná un pincel de **tile** (`Libre`, `Muro A`, `Muro B`, `Muro C`, `Salida`, `Puerta/Reja`) y pintá con clic o arrastrando sobre la grilla.
 - Seleccioná un pincel de **entidad** (`Spawn`, `Item`, `Interruptor`, `NPC`, `Enemigo`) y hacé clic sobre cualquier celda libre (`0`) para ubicarla.
-- El indicador superior derecho **PS2 Est.: ~N tris** calcula en tiempo real el presupuesto poligonal estimado para mantener 60 FPS en PlayStation 2 (recomendado: mantener cada mapa bajo `1.800 tris`).
+- El indicador superior derecho muestra el presupuesto aproximado de triángulos al elegir PS2; para PC indica el perfil WebGL activo.
 - Desde el **Inspector** (panel derecho) podés ajustar el nombre del mapa, el color atmosférico (`R/G/B`), la intensidad de luz y las propiedades de cualquier entidad seleccionada.
 
 ### 3.3 Editor de Scripts y API del Motor
@@ -97,6 +100,12 @@ HKEngine.registerHooks({
 - `HKPhysics.hasLineOfSight(grid, x0, y0, x1, y1)` — comprueba línea de visión directa.
 - `HKPlatform.rect(x, y, w, h, rgba(r,g,b,a))` / `HKPlatform.text(x, y, str, scale, col)` — primitivas 2D portables (recordá que el alfa en PS2 GS va de `0` a `128`).
 - `HKPlatform.saveJSON(slot, obj)` / `HKPlatform.loadJSON(slot)` — persistencia unificada (`mc0:/HKENGINE/` en PS2, `localStorage` en PC).
+
+### Modelos 3D para PC
+- **Importar modelo** acepta archivos Wavefront `.obj`, `.mtl` y texturas `.png` / `.jpg`. Seleccioná el OBJ junto con su MTL y las texturas referenciadas por `map_Kd`.
+- Los recursos quedan en `assets/models/`. En el inspector de una entidad, completá **Modelo 3D (ruta OBJ)**, por ejemplo `assets/models/mi_modelo.obj`.
+- El exportador PC incluye los recursos y ejecuta la escena con WebGL, profundidad, iluminación direccional, niebla y materiales texturizados. Si una entidad no tiene un OBJ asignado, se representa con una malla simple según su tipo.
+- Los proyectos PS2 conservan AthenaEnv/VU1 y reciben las texturas base de Subsuelo04 para piso, techo, concreto, óxido, ritual, salida y rejas. Podés reemplazarlas en tu proyecto con archivos del mismo nombre bajo `assets/textures/`.
 
 ### 3.5 Abrir proyectos modulares PS2 existentes (modo dual)
 **HK Engine 1 Studio** también puede abrir cualquier proyecto modular externo de PlayStation 2 (`src/*.js` + `src/map.js` + `tools/build_main.py` / `tools/generate_map_walls.py`) sin mover archivos:
@@ -134,7 +143,8 @@ python3 tools/build_pc.py projects/mi_juego
 ```
 
 El exportador genera `dist/pc/mi_juego/` con:
-- `index.html` + `game_bundle.js` — versión jugable directa en cualquier navegador o ventana local.
+- `index.html` + `game_bundle.js` — versión WebGL jugable en cualquier navegador o ventana local.
+- `assets/` — modelos OBJ/MTL y texturas del proyecto más los materiales base del perfil.
 - `launcher_pc.py` — lanzador de escritorio (usa `pywebview` si está instalado o abre el navegador local).
 - `build_exe.bat` — script listo para Windows que empaqueta todo en un único ejecutable independiente `mi_juego.exe` con **PyInstaller** (`--onefile --noconsole`).
 

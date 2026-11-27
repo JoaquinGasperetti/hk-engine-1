@@ -1,5 +1,5 @@
 // ============================================================================
-// HK Engine 1 — Platform Backend: PC Desktop / Browser (Canvas 2D + Raycaster/3D)
+// HK Engine 1 — Platform Backend: PC Desktop / Browser (WebGL 3D + Canvas HUD)
 // Permite exportar el mismo juego como app web o ejecutable Windows/Linux (.exe)
 // ============================================================================
 function hkColorToCss(col) {
@@ -12,8 +12,8 @@ function hkColorToCss(col) {
 
 const HKPlatform = {
     name: "PC",
-    screenW: 640,
-    screenH: 448,
+    screenW: 960,
+    screenH: 540,
     isPAL: false,
     depthReady: true,
     canvas: null,
@@ -34,6 +34,7 @@ const HKPlatform = {
         this.canvas.width = this.screenW;
         this.canvas.height = this.screenH;
         this.ctx = this.canvas.getContext("2d");
+        const pointerTarget = document.getElementById("hk-gl-canvas") || this.canvas;
 
         const self = this;
         window.addEventListener("keydown", function (e) {
@@ -46,11 +47,11 @@ const HKPlatform = {
         window.addEventListener("keyup", function (e) {
             self.keys[e.code] = false;
         });
-        this.canvas.addEventListener("click", function () {
-            if (self.canvas.requestPointerLock) self.canvas.requestPointerLock();
+        pointerTarget.addEventListener("click", function () {
+            if (pointerTarget.requestPointerLock) pointerTarget.requestPointerLock();
         });
         window.addEventListener("mousemove", function (e) {
-            if (document.pointerLockElement === self.canvas) {
+            if (document.pointerLockElement === pointerTarget || document.pointerLockElement === self.canvas) {
                 self.mouseDX += e.movementX || 0;
                 self.mouseDY += e.movementY || 0;
             }
@@ -128,8 +129,7 @@ const HKPlatform = {
     runLoop: function (tickFn) {
         const self = this;
         function frame() {
-            self.ctx.fillStyle = self.clearCss;
-            self.ctx.fillRect(0, 0, self.screenW, self.screenH);
+            self.ctx.clearRect(0, 0, self.screenW, self.screenH);
             tickFn();
             window.requestAnimationFrame(frame);
         }

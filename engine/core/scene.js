@@ -33,6 +33,10 @@ const HKEngine = {
                 kind: e.kind, x: toF64(e.x), y: toF64(e.y),
                 label: e.label || e.kind.toUpperCase(),
                 dialog: e.dialog || "",
+                model: e.model || "",
+                modelScale: e.modelScale || 0.55,
+                modelY: e.modelY || 0,
+                rotationY: e.rotationY || 0,
                 taken: false
             });
         }
@@ -120,6 +124,7 @@ const HKEngine = {
         this.project = projectConfig;
         this.maps = mapsDict || {};
         HKPlatform.init("hk-canvas");
+        if (HKPlatform.name === "PC" && typeof HKPCRenderer !== "undefined") HKPCRenderer.init("hk-gl-canvas");
         this.loadMap(projectConfig.startMap || Object.keys(this.maps)[0]);
         const self = this;
         HKPlatform.runLoop(function () { self.tick(); });

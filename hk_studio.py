@@ -15,8 +15,11 @@ from __future__ import annotations
 
 import argparse
 import ast
+import base64
+import binascii
 import http.server
 import json
+import mimetypes
 import re
 import shutil
 import socketserver
@@ -151,6 +154,13 @@ class HKStudioHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_bytes(self, body, content_type, status=200):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _read_json(self):
         length = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(length) if length > 0 else b"{}"
@@ -160,6 +170,46 @@ class HKStudioHandler(http.server.SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         qs = urllib.parse.parse_qs(parsed.query)
         try:
+            if parsed.path == "/api/renderer-pc":
+                script = (ROOT / "engine/core/renderer_pc_webgl.js").read_bytes()
+                return self._send_bytes(script, "application/javascript; charset=utf-8")
+
+            if parsed.path == "/api/assets":
+                pdir, mode = resolve_project_dir(qs["path"][0])
+                if mode != "native":
+                    return self._send_json({"error": "La vista previa de modelos requiere un proyecto nativo."}, status=400)
+                profile_assets = ROOT / "engine/profiles/subsuelo04/assets"
+                obj_files = {}
+                for source in (profile_assets, pdir / "assets"):
+                    if not source.is_dir():
+                        continue
+                    for asset in source.rglob("*"):
+                        if asset.is_file() and asset.suffix.lower() in {".obj", ".mtl"}:
+                            key = "assets/" + asset.relative_to(source).as_posix()
+                            obj_files[key] = asset.read_text(encoding="utf-8", errors="ignore")
+                return self._send_json({"objFiles": obj_files})
+
+            if parsed.path == "/api/project-asset":
+                pdir, mode = resolve_project_dir(qs["path"][0])
+                if mode != "native":
+                    return self._send_json({"error": "Recurso no disponible para este tipo de proyecto."}, status=400)
+                rel = Path(qs["file"][0].replace("\\", "/"))
+                if rel.is_absolute() or not rel.parts or rel.parts[0] != "assets" or ".." in rel.parts:
+                    return self._send_json({"error": "Ruta de recurso inválida."}, status=400)
+                project_root = pdir.resolve()
+                source = (project_root / rel).resolve()
+                if not source.is_relative_to(project_root):
+                    return self._send_json({"error": "Ruta de recurso inválida."}, status=400)
+                if not source.is_file():
+                    profile_root = (ROOT / "engine/profiles/subsuelo04").resolve()
+                    source = (profile_root / rel).resolve()
+                    if not source.is_relative_to(profile_root):
+                        return self._send_json({"error": "Ruta de recurso inválida."}, status=400)
+                if not source.is_file():
+                    return self._send_json({"error": "Recurso no encontrado."}, status=404)
+                mime = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
+                return self._send_bytes(source.read_bytes(), mime)
+
             if parsed.path == "/api/projects":
                 return self._send_json({"projects": list_all_projects()})
 
@@ -169,7 +219,13 @@ class HKStudioHandler(http.server.SimpleHTTPRequestHandler):
                     proj = json.loads((pdir / "project.json").read_text(encoding="utf-8"))
                     maps = sorted(f.stem for f in (pdir / "maps").glob("*.json"))
                     scripts = sorted(f.name for f in (pdir / "scripts").glob("*.js"))
-                    return self._send_json({"mode": "native", "project": proj, "maps": maps, "scripts": scripts})
+                    model_dir = pdir / "assets/models"
+                    models = sorted(
+                        "assets/" + f.relative_to(pdir / "assets").as_posix()
+                        for f in model_dir.rglob("*")
+                        if model_dir.is_dir() and f.is_file() and f.suffix.lower() == ".obj"
+                    )
+                    return self._send_json({"mode": "native", "project": proj, "maps": maps, "scripts": scripts, "models": models})
                 # Modo modular externo (src/*.js + tools/modules.json)
                 maps = list(read_modular_maps(pdir).keys())
                 scripts = sorted(f.name for f in (pdir / "src").glob("*.js"))
@@ -262,6 +318,25 @@ class HKStudioHandler(http.server.SimpleHTTPRequestHandler):
                 (pdir / folder / name).write_text(payload["code"], encoding="utf-8")
                 return self._send_json({"ok": True})
 
+            if parsed.path == "/api/import-asset":
+                pdir, mode = resolve_project_dir(payload["path"])
+                if mode != "native":
+                    return self._send_json({"error": "La importación directa de modelos requiere un proyecto nativo HK Engine."}, status=400)
+                filename = Path(payload.get("filename", "")).name
+                suffix = Path(filename).suffix.lower()
+                if suffix not in {".obj", ".mtl", ".png", ".jpg", ".jpeg"}:
+                    return self._send_json({"error": "Formato no compatible. Importá OBJ, MTL, PNG o JPG."}, status=400)
+                try:
+                    raw = base64.b64decode(payload.get("data", ""), validate=True)
+                except (binascii.Error, ValueError):
+                    return self._send_json({"error": "El archivo enviado no es un Base64 válido."}, status=400)
+                if not raw or len(raw) > 20 * 1024 * 1024:
+                    return self._send_json({"error": "El archivo está vacío o supera el límite de 20 MB."}, status=400)
+                asset_path = pdir / "assets" / "models" / filename
+                asset_path.parent.mkdir(parents=True, exist_ok=True)
+                asset_path.write_bytes(raw)
+                return self._send_json({"ok": True, "path": asset_path.relative_to(pdir).as_posix(), "bytes": len(raw)})
+
             if parsed.path == "/api/new-project":
                 tpl, tmode = resolve_project_dir(payload.get("template", "templates/fps_exploration"))
                 if tmode != "native":
@@ -275,6 +350,12 @@ class HKStudioHandler(http.server.SimpleHTTPRequestHandler):
                 pj = dest / "project.json"
                 meta = json.loads(pj.read_text(encoding="utf-8"))
                 meta["name"] = payload.get("name") or slug
+                target = "ps2" if payload.get("targetPlatform") == "ps2" else "pc"
+                meta["targetPlatform"] = target
+                meta["targetPS2"] = True
+                meta["targetPC"] = True
+                meta["rendererProfile"] = "athena-vu1" if target == "ps2" else "webgl-high"
+                meta["graphicsProfile"] = "subsuelo04" if target == "ps2" else "pc-high"
                 pj.write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
                 return self._send_json({"ok": True, "path": f"projects/{slug}"})
 

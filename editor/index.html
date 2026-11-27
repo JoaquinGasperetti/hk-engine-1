@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HK Engine 1 Studio — PS2 & PC Game Engine</title>
+<title>HK Engine Studio — PC & PlayStation 2</title>
 <link rel="stylesheet" href="studio.css">
 </head>
 <body>
@@ -11,20 +11,47 @@
   <div class="brand">
     <span class="brand-dot"></span>
     <strong>HK ENGINE 1</strong>
-    <span class="brand-sub">Studio · PS2 / PC</span>
+    <span class="brand-sub">Studio · PC / PS2</span>
   </div>
   <div class="toolbar-group">
     <select id="project-select" title="Proyecto o plantilla activa"></select>
     <button id="btn-new-proj" class="btn">+ Nuevo</button>
     <button id="btn-open-folder" class="btn">Abrir Carpeta</button>
+    <button id="btn-import-model" class="btn">Importar modelo</button>
     <button id="btn-save" class="btn btn-primary">Guardar (Ctrl+S)</button>
   </div>
   <div class="toolbar-group">
+    <button id="btn-target" class="btn target-btn">Perfil: PC</button>
     <button id="btn-play" class="btn btn-play">Probar en Vivo</button>
     <button id="btn-export-ps2" class="btn btn-accent">Exportar PS2</button>
     <button id="btn-export-pc" class="btn btn-accent2">Exportar PC (.exe)</button>
   </div>
 </header>
+
+<input id="model-files" type="file" accept=".obj,.mtl,.png,.jpg,.jpeg" multiple hidden>
+
+<section id="platform-chooser" class="platform-chooser" role="dialog" aria-modal="true" aria-labelledby="platform-title">
+  <div class="platform-card">
+    <div class="platform-brand"><span class="brand-dot"></span> HK ENTERTAINMENT · HK ENGINE</div>
+    <h1 id="platform-title">¿Qué querés desarrollar?</h1>
+    <p>Elegí el perfil de trabajo. Podés cambiarlo más tarde desde la barra superior.</p>
+    <div class="platform-options">
+      <button class="platform-option pc-option" data-platform="pc">
+        <span class="platform-icon">▣</span>
+        <strong>PC</strong>
+        <span>WebGL, modelos 3D, materiales y texturas para escritorio.</span>
+        <small>PERFIL DE ALTA CALIDAD</small>
+      </button>
+      <button class="platform-option ps2-option" data-platform="ps2">
+        <span class="platform-icon">◉</span>
+        <strong>PlayStation 2</strong>
+        <span>AthenaEnv V4, VU1 y el perfil visual de Subsuelo04.</span>
+        <small>HARDWARE REAL · PCSX2</small>
+      </button>
+    </div>
+    <div class="platform-footer">HK Engine prepara el editor y la exportación para la plataforma elegida.</div>
+  </div>
+</section>
 
 <main class="workspace">
   <!-- Panel Izquierdo: Explorador de Proyecto y Jerarquía -->
@@ -39,6 +66,10 @@
     <div class="dock-section">
       <div class="dock-head"><span>SCRIPTS</span></div>
       <ul id="script-list" class="tree-list"></ul>
+    </div>
+    <div class="dock-section model-browser">
+      <div class="dock-head"><span>MODELOS 3D · OBJ</span><span id="model-count" class="tree-tag">0</span></div>
+      <ul id="model-list" class="tree-list"></ul>
     </div>
     <div class="dock-section grow">
       <div class="dock-head"><span>ENTIDADES EN ESCENA</span></div>
@@ -81,7 +112,8 @@
         <button id="btn-reset-play" class="mini-btn">Reiniciar</button>
       </div>
       <div class="canvas-stage">
-        <canvas id="play-canvas" width="640" height="448"></canvas>
+        <canvas id="play-gl-canvas" width="960" height="540"></canvas>
+        <canvas id="play-canvas" width="960" height="540"></canvas>
       </div>
     </div>
 
@@ -119,6 +151,7 @@
   </aside>
 </main>
 
+<script src="/api/renderer-pc"></script>
 <script src="studio.js"></script>
 </body>
 </html>

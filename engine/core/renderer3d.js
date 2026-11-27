@@ -1,5 +1,5 @@
 // ============================================================================
-// HK Engine 1 — Unified 3D Renderer (VU1 Hardware on PS2 + Raycaster 3D on PC)
+// HK Engine 1 — Unified 3D Renderer (VU1 Hardware on PS2 + WebGL on PC)
 // Soporta atmósferas por mapa, mirada vertical libre, luz direccional y HUD.
 // ============================================================================
 const HKRenderer = {
@@ -27,11 +27,16 @@ const HKRenderer = {
             if (typeof Camera.type === "function") Camera.type(Camera.LOOKAT);
             this.staticMeshes = [];
             const prefix = "assets/models/" + mapId + "_";
-            const parts = ["floor.obj", "ceiling.obj", "walls_1.obj", "walls_2.obj", "walls_3.obj", "exit.obj", "gates.obj"];
+            const parts = [
+                ["floor.obj", "floor.png"], ["ceiling.obj", "ceiling.png"],
+                ["walls_1.obj", "wall_concrete.png"], ["walls_2.obj", "wall_rust.png"],
+                ["walls_3.obj", "wall_ritual.png"], ["exit.obj", "exit_door.png"], ["gates.obj", "gate.png"]
+            ];
             for (let i = 0; i < parts.length; i++) {
-                const p = prefix + parts[i];
+                const p = prefix + parts[i][0];
                 if (!HKPlatform.fileExists(p)) continue;
-                const data = hkFixProto(new RenderData(p), RenderData);
+                const texture = "assets/textures/" + parts[i][1];
+                const data = hkFixProto(HKPlatform.fileExists(texture) ? new RenderData(p, texture) : new RenderData(p), RenderData);
                 try { data.accurate_clipping = true; } catch (_) {}
                 try { data.face_culling = Render.CULL_FACE_NONE; } catch (_) {}
                 const obj = hkFixProto(new RenderObject(data), RenderObject);
@@ -48,7 +53,10 @@ const HKRenderer = {
         const atmo = scene.atmosphere || { clearR: 8, clearG: 10, clearB: 16, lightMul: 1.0 };
         HKPlatform.clearColor(atmo.clearR, atmo.clearG, atmo.clearB);
 
-        if (HKPlatform.name === "PS2" && this.vu1Ready && HKPlatform.depthReady) {
+        const pcRendered = HKPlatform.name === "PC" && typeof HKPCRenderer !== "undefined" && HKPCRenderer.renderScene(scene, atmo, frameTick);
+        if (pcRendered) {
+            // PC WebGL renderer handled the 3D layer.
+        } else if (HKPlatform.name === "PS2" && this.vu1Ready && HKPlatform.depthReady) {
             this.renderPS2VU1(scene, atmo);
         } else {
             this.renderSoftware3D(scene, atmo, frameTick);

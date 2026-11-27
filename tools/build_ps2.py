@@ -4,6 +4,7 @@ Genera dist/ps2/<proyecto>/ listo para OPL APPS (USB FAT32) o DVD-R ISO."""
 
 from __future__ import annotations
 import json
+import shutil
 import sys
 from pathlib import Path
 from generate_meshes import compile_map_json
@@ -21,6 +22,14 @@ PS2_CORE_FILES = [
 def export_ps2(project_dir: Path, out_dir: Path) -> Path:
     proj = json.loads((project_dir / "project.json").read_text(encoding="utf-8"))
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # El perfil Subsuelo04 aporta los materiales y texturas del runtime PS2.
+    profile_assets = ENGINE_ROOT / "engine/profiles/subsuelo04/assets"
+    if profile_assets.is_dir():
+        shutil.copytree(profile_assets, out_dir / "assets", dirs_exist_ok=True)
+    project_assets = project_dir / "assets"
+    if project_assets.is_dir():
+        shutil.copytree(project_assets, out_dir / "assets", dirs_exist_ok=True)
 
     # 1. Compilar mallas .obj de todos los mapas del proyecto
     maps_dict = {}
